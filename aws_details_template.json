@@ -1,5 +1,7 @@
 {
   "aws_access_key_id": "YOUR_AWS_ACCESS_KEY_ID",
   "aws_secret_access_key": "YOUR_AWS_SECRET_ACCESS_KEY",
-  "region": "YOUR_PREFERRED_REGION"
+  "region": "YOUR_PREFERRED_REGION",
+  "DB_username" : "CREATE_AN_RDS_DATABASE_USERNAME",
+  "DB_password" : "CREATE_AN_RDS_DATABASE_PASSWORD"
 }

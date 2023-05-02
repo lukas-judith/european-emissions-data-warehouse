@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::raw-data-bucket-1405480/*",
+        "arn:aws:s3:::raw-data-bucket-1405480"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "glue:StartJobRun",
+        "glue:GetJobRun",
+        "glue:BatchStopJobRun"
+      ],
+      "Resource": "arn:aws:glue:REGION:ACCOUNT_ID:job/etl-glue-job"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::script-bucket-1405480",
+        "arn:aws:s3:::script-bucket-1405480/*"
+      ]
+    }
+  ]
+}
