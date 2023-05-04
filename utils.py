@@ -1,4 +1,6 @@
 import pickle
+import zipfile
+
 
 def find_optimal_number_of_AZs(num_subnets, num_azs):
     """
@@ -12,6 +14,11 @@ def find_optimal_number_of_AZs(num_subnets, num_azs):
         return min(num_azs, num_subnets // 2)
     else:
         return 2
+    
+
+def zip_file(input_file, output_zip):
+    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipf.write(input_file)
     
 
 def save_object(obj, path):

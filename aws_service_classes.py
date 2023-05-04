@@ -4,10 +4,12 @@ import os
 import boto3
 import botocore
 import pdb
+from time import sleep
 
 import numpy as np
 
 from utils import find_optimal_number_of_AZs
+
 
 
 def handle_exceptions(service_type, operation):
@@ -88,6 +90,11 @@ class AWSServiceCollection():
         for component in components:
             self.add_component(component)
 
+    @property
+    def empty(self):
+        # True when list of components is empty
+        return len(self.components) == 0
+
     def delete_components(self):
         """
         Deletes all AWS compnents and removes them from the components list.
@@ -104,12 +111,41 @@ class AWSServiceCollection():
                 deletion_successful = component.delete()
                 if deletion_successful:
                     self.components.remove(component)
-
-    @property
-    def empty(self):
-        # True when list of components is empty
-        return len(self.components) == 0
     
+    def delete_components_with_retry(self, max_attempts=3):
+        """
+        Delete all AWS components in the AWS service collection.
+        If deletion fails upon first attempt, try again.
+        """
+        c = 0
+        first_deletion_attempt = True
+        # loop in case any deletion fails on first attempt
+        while not self.empty:
+            if c > max_attempts:
+                print("Could not delete all AWS resources!")
+                print("Please delete the following components manually:")
+                self.list()
+                return
+            c += 1
+            if not first_deletion_attempt:
+                print('\nTrying again to delete remaining components...')
+            self.delete_components()
+            first_deletion_attempt = False
+        print("\nAll components deleted successfully!")
+    
+    def contains_resource(self, name=None, id=None):
+        """
+        Check if the collection includes a resource with given name or ID.
+        """
+        if not name and not id:
+            raise Exception("You must specify either ID or name of the resource!")
+        for comp in self.components:
+            if name and name == comp.name:
+                return True
+            if id and id == comp.id:
+                return True
+        return False
+
     def list(self):
         """
         List all components.
@@ -575,34 +611,26 @@ class S3LambdaFunction(AWSService):
     """
     Class of Lambda function triggered by S3 bucket upload of .csv file.
     """
-    def __init__(self, session, region, name, handler, role, bucket_name, variables=None,
-                 collections=None):
+    def __init__(self, session, region, account_id, name, handler, script_object_key,
+                 bucket_name_script, bucket_name_trigger, role, variables=None, collections=None):
         super().__init__(session, collections, type='Lambda function')
         self.name = name
         self.region = region
         self.handler = handler
         self.role = role
-        self.bucket_name = bucket_name
-        self.create(variables)
+        self.bucket_name_script = bucket_name_script
+        self.bucket_name_trigger = bucket_name_trigger
+        self.create(script_object_key, account_id, variables)
 
     @handle_exceptions('Lambda function', 'create')  
-    def create(self, variables):
+    def create(self, script_object_key, account_id, variables):
         lambda_client = self.session.client('lambda', region_name=self.region)
 
-        # the hander object is a string of the format {script_name}.{function_name}
-        script_name, function_name = self.handler.split('.')
-
-        # save python script as bytes to pass it to the lambda function
-        with open(f'{script_name}.py', 'rb') as file:
-            script_in_bytes = file.read()
-
-        environment_variables = {
-            'SESSION' : self.session,
-            'BUCKET' : self.bucket_name
-        }
+        environment_variables = {}
         # variable names for the Lambda function, other than session and bucket name 
-        for key, value in variables:
-            environment_variables[key] = value
+        if variables:
+            for key, value in variables:
+                environment_variables[key] = value
 
         response = lambda_client.create_function(
             FunctionName=self.name,
@@ -613,17 +641,33 @@ class S3LambdaFunction(AWSService):
                 'Variables' : environment_variables
             } ,
             Code={
-                'ZipFile': script_in_bytes
+                'S3Bucket': self.bucket_name_script,
+                'S3Key' : script_object_key
             },
-            Timeout=3000,
+            Timeout=300,
             MemorySize=1024
         )
         self.id = response['FunctionArn']
 
+        # wait util the Lambda function is set up before proceeding
+        waiter = lambda_client.get_waiter('function_active')
+        waiter.wait(FunctionName=self.name)
+
+        # add permission that allows the S3 bucket to invoke the Lambda function
+        source_bucket_arn = f"arn:aws:s3:::{self.bucket_name_trigger}"
+        response = lambda_client.add_permission(
+            FunctionName=self.name,
+            StatementId='S3Invoke',  
+            Action='lambda:InvokeFunction',
+            Principal='s3.amazonaws.com',
+            SourceArn=source_bucket_arn,
+            SourceAccount=account_id
+        )
+
         s3_client = self.session.client('s3')
 
         response = s3_client.put_bucket_notification_configuration(
-            Bucket=self.bucket_name,
+            Bucket=self.bucket_name_trigger,
             NotificationConfiguration={
                 'LambdaFunctionConfigurations': [
                     {
@@ -647,8 +691,8 @@ class S3LambdaFunction(AWSService):
 
     @handle_exceptions('Lambda function', 'delete')  
     def delete(self):
-        lambda_client = self.session.client('lambda')
-        lambda_client.create_function(FunctionName=self.name)
+        lambda_client = self.session.client('lambda', region_name=self.region)
+        lambda_client.delete_function(FunctionName=self.name)
         super().delete()
 
 

@@ -1,11 +1,10 @@
 import pdb
 import json
-from time import sleep
 import boto3
 import random
+from time import sleep
 
 import utils
-
 from aws_service_classes import *
 
 
@@ -51,32 +50,41 @@ try:
     )
     sts_client = session.client('sts')
     account_id = sts_client.get_caller_identity()['Account']
-    print(f'Successfully connected to AWS account with account ID {account_id}!')
+    print(f'\nSuccessfully connected to AWS account with account ID {account_id}!')
 except:
     print("Error! Could not connect to AWS! Make sure the credentials are correct.")
     exit()
+
+
+
+
 
 # create a collection of AWS services to make it easier to delete all of them later
 AWS_architecture = AWSServiceCollection()
 print('\nBuilding cloud infrastructure...')
 
+
 # create VPC with 2 subnets
 num_subnets = 2
-vpc = VPC(session, region, num_subnets, VPC_NAME, collections=[AWS_architecture])
-# using multiple subnets across different availability zones (AZs) 
-# is recommended for RDS instance to achieve higher availability
-subnets = [comp for comp in vpc.components if isinstance(comp, Subnet)]
+# vpc = VPC(session, region, num_subnets, VPC_NAME, collections=[AWS_architecture])
+# # using multiple subnets across different availability zones (AZs) 
+# # is recommended for RDS instance to achieve higher availability
+# subnets = [comp for comp in vpc.components if isinstance(comp, Subnet)]
 
 # create S3 buckets for data and script storage (object storage)
 bucket_script = S3Bucket(session, region, BUCKET_NAME_SCRIPT, collections=[AWS_architecture])
 bucket_source = S3Bucket(session, region, BUCKET_NAME_SOURCE, collections=[AWS_architecture])
-bucket_sink = S3Bucket(session, region, BUCKET_NAME_SINK, collections=[AWS_architecture])
+# bucket_sink = S3Bucket(session, region, BUCKET_NAME_SINK, collections=[AWS_architecture])
 
 # upload the scripts for the ETL process and Lambda handlers to an S3 bucket
 etl_script_object_key = 'etl_process.py'
 lambda_script_object_key = 'lambda_handlers.py'
+
+# zip Python script with Lambda handlers
+utils.zip_file('scripts/lambda_handlers.py', 'scripts/lambda_handlers.zip')
+
 bucket_script.upload_data('scripts/etl_process.py', etl_script_object_key)
-bucket_script.upload_data('scripts/lambda_handlers.py', lambda_script_object_key)
+bucket_script.upload_data('scripts/lambda_handlers.zip', lambda_script_object_key)
 # full paths of the scripts
 etl_script_location = f's3://{bucket_script.name}/{etl_script_object_key}'
 lambda_script_location = f's3://{bucket_script.name}/{lambda_script_object_key}'
@@ -84,19 +92,46 @@ lambda_script_location = f's3://{bucket_script.name}/{lambda_script_object_key}'
 
 # create AWS Glue job with associated IAM role
 glue_job_policy = IAMPolicy(session, f'{GLUE_JOB_NAME}-policy', GLUE_JOB_POLICY_PATH,
-                                region, account_id, collections=[AWS_architecture])
+                            region, account_id, collections=[AWS_architecture])
 
 glue_job_role = IAMRole(session, f'{GLUE_JOB_NAME}-role', 'glue.amazonaws.com',
                         policies=[glue_job_policy], collections=[AWS_architecture])
 
 etl_glue_job = AWSGlueJob(session, region, 'etl-glue-job', glue_job_role,
-                          etl_script_location, collections=[AWS_architecture])
+                            etl_script_location, collections=[AWS_architecture])
 
+
+# create Lambda function to trigger the Glue job
+glue_lambda_policy = IAMPolicy(session, f'{LAMBDA_NAME_GLUE}-policy', LAMBDA_GLUE_POLICY_PATH,
+                            region, account_id, collections=[AWS_architecture])
+
+glue_lambda_role = IAMRole(session, f'{LAMBDA_NAME_GLUE}-role', 'lambda.amazonaws.com',
+                        policies=[glue_lambda_policy], collections=[AWS_architecture])
+
+
+glue_lambda_handler = 'lambda_handlers.start_glue_job'
+# depending on delay after creating IAM role, creation of function may fail on the first try
+max_attempts = 6
+delay = 10
+c = 0
+while not AWS_architecture.contains_resource(name=LAMBDA_NAME_GLUE):
+    if c >= max_attempts:
+        print("Could not create Lambda function!")
+        print("Aborting...")
+        AWS_architecture.delete_components_with_retry()
+        exit()
+    c += 1
+    #print(f"attempt #{c}...")
+    sleep(delay)
+    # create lambda function that is triggered upon .csv upload to an S3 bucket
+    glue_lambda_function = S3LambdaFunction(session, region, account_id, LAMBDA_NAME_GLUE, glue_lambda_handler,
+                                            lambda_script_object_key, BUCKET_NAME_SCRIPT, BUCKET_NAME_SOURCE,
+                                            glue_lambda_role, collections=[AWS_architecture])
 
 # create security group as component of the VPC
-rds_security_group = SecurityGroup(session, region, vpc.id, f'{RDS_NAME}_security_group',
-                                   description=f"Security Group for {RDS_NAME} RDS Instance", 
-                                   json_file=SECURITY_GROUP_RDS_PATH, collections=[vpc])
+# rds_security_group = SecurityGroup(session, region, vpc.id, f'{RDS_NAME}_security_group',
+#                                    description=f"Security Group for {RDS_NAME} RDS Instance", 
+#                                    json_file=SECURITY_GROUP_RDS_PATH, collections=[vpc])
 
 
 # # create PostgreSQL RDS instance as data warehouse
@@ -104,42 +139,30 @@ rds_security_group = SecurityGroup(session, region, vpc.id, f'{RDS_NAME}_securit
 #                              security_groups=[rds_security_group], subnets=subnets,
 #                              collections=subnets)
 
+# rds_lambda function...
+
 
 # TODO: sort AWS architecture component list to ensure roles are deleted before policies etc.
+
+
 
 print("\nFinished setting up cloud architecture!")
 print("You can now upload new data by typing ...\n") 
 
-POSSIBLE_ANSWERS =  ['delete me', 'exit']
+POSSIBLE_ANSWERS =  ['delete', 'exit']
 ans = None
 
-print("When you are ready to delete the architecture, type 'delete me'.")
+print("When you are ready to delete the architecture, type 'delete'.")
+print("WARNING! This will delete all data that has not been backed up from the cloud!")
 print("If you want to remove the components later manually, type 'exit'.")
 
 while ans not in POSSIBLE_ANSWERS:
     ans = input('> ')
 
-    # delete all AWS components
-    # limit for how may times the script can attempt to delete resources
-    limit = 3
-    c = 0
-    if ans.lower() == 'delete me':
+    if ans.lower() == 'delete':
         print('')
-        first_deletion_attempt = True
-        # loop in case any deletion fails on first attempt
-        while not AWS_architecture.empty:
-            if c > limit:
-                print("Could not delete all AWS resources!")
-                print("Please delete the following components manually:")
-                AWS_architecture.list()
-                exit()
-            c += 1
-            if not first_deletion_attempt:
-                print('\nTrying again to delete remaining components...')
-            AWS_architecture.delete_components()
-            first_deletion_attempt = False
-
-        print('\nAll deleted successfully!\nDone!')
+        AWS_architecture.delete_components_with_retry()
+        print('\nDone!')
         exit()
 
     elif ans.lower() == 'exit':
