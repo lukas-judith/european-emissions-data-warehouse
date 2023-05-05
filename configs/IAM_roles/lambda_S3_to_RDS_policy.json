@@ -21,6 +21,16 @@
       "Resource": [
         "arn:aws:rds-db:REGION:ACCOUNT_ID:db:data-warehouse"
       ]
+    },
+    {
+      "Sid": "AllowCloudWatchLogsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
     }
   ]
 }

@@ -6,6 +6,7 @@ from time import sleep
 
 import utils
 from aws_service_classes import *
+from data_downloader import download_emission_data
 
 
 # names of the AWS resources
@@ -20,6 +21,7 @@ RDS_NAME = 'data-warehouse'
 LAMBDA_NAME_RDS = 's3-to-rds-lambda'
 LAMBDA_NAME_GLUE = 's3-to-glue-lambda'
 GLUE_JOB_NAME = 'etl-glue-job'
+DATA_OBJECT_KEY = 'data.csv'
 
 # paths of the config JSON files for IAM policies and security groups
 SECURITY_GROUP_RDS_PATH = 'configs/security_groups/rds_security_group.json'
@@ -57,8 +59,6 @@ except:
 
 
 
-
-
 # create a collection of AWS services to make it easier to delete all of them later
 AWS_architecture = AWSServiceCollection()
 print('\nBuilding cloud infrastructure...')
@@ -74,14 +74,16 @@ num_subnets = 2
 # create S3 buckets for data and script storage (object storage)
 bucket_script = S3Bucket(session, region, BUCKET_NAME_SCRIPT, collections=[AWS_architecture])
 bucket_source = S3Bucket(session, region, BUCKET_NAME_SOURCE, collections=[AWS_architecture])
-# bucket_sink = S3Bucket(session, region, BUCKET_NAME_SINK, collections=[AWS_architecture])
+bucket_sink = S3Bucket(session, region, BUCKET_NAME_SINK, collections=[AWS_architecture])
 
 # upload the scripts for the ETL process and Lambda handlers to an S3 bucket
 etl_script_object_key = 'etl_process.py'
 lambda_script_object_key = 'lambda_handlers.py'
 
 # zip Python script with Lambda handlers
-utils.zip_file('scripts/lambda_handlers.py', 'scripts/lambda_handlers.zip')
+os.chdir('scripts')
+utils.zip_file('lambda_handlers.py', 'lambda_handlers.zip')
+os.chdir('..')
 
 bucket_script.upload_data('scripts/etl_process.py', etl_script_object_key)
 bucket_script.upload_data('scripts/lambda_handlers.zip', lambda_script_object_key)
@@ -91,19 +93,35 @@ lambda_script_location = f's3://{bucket_script.name}/{lambda_script_object_key}'
 
 
 # create AWS Glue job with associated IAM role
-glue_job_policy = IAMPolicy(session, f'{GLUE_JOB_NAME}-policy', GLUE_JOB_POLICY_PATH,
-                            region, account_id, collections=[AWS_architecture])
+glue_job_policy = IAMPolicy(session, f'{GLUE_JOB_NAME}-policy', region,
+                            json_file=GLUE_JOB_POLICY_PATH, account_id=account_id,
+                            collections=[AWS_architecture])
+
+# provide AWS Glue with full access for S3 buckets, creating from policy ARN
+# (don't add to collection, should not be deleted)
+s3_full_access_policy = IAMPolicy(session, 's3-full-access-policy', region,
+                                  arn='arn:aws:iam::aws:policy/AmazonS3FullAccess',
+                                  account_id=account_id)
 
 glue_job_role = IAMRole(session, f'{GLUE_JOB_NAME}-role', 'glue.amazonaws.com',
-                        policies=[glue_job_policy], collections=[AWS_architecture])
+                        policies=[glue_job_policy, s3_full_access_policy],
+                        collections=[AWS_architecture])
 
-etl_glue_job = AWSGlueJob(session, region, 'etl-glue-job', glue_job_role,
-                            etl_script_location, collections=[AWS_architecture])
+# specify variables for Glue run
+arguments_glue = {
+    '--SOURCE_BUCKET_NAME' : bucket_source.name,
+    '--SINK_BUCKET_NAME' : bucket_sink.name,
+    # file path to the file containing the data
+    '--SOURCE_FILEPATH' : DATA_OBJECT_KEY
+}
 
+etl_glue_job = AWSGlueJob(session, region, 'etl-glue-job', glue_job_role, etl_script_location,
+                          variables=arguments_glue, collections=[AWS_architecture])
 
 # create Lambda function to trigger the Glue job
-glue_lambda_policy = IAMPolicy(session, f'{LAMBDA_NAME_GLUE}-policy', LAMBDA_GLUE_POLICY_PATH,
-                            region, account_id, collections=[AWS_architecture])
+glue_lambda_policy = IAMPolicy(session, f'{LAMBDA_NAME_GLUE}-policy', region, 
+                               json_file=LAMBDA_GLUE_POLICY_PATH, account_id=account_id,
+                               collections=[AWS_architecture])
 
 glue_lambda_role = IAMRole(session, f'{LAMBDA_NAME_GLUE}-role', 'lambda.amazonaws.com',
                         policies=[glue_lambda_policy], collections=[AWS_architecture])
@@ -111,22 +129,31 @@ glue_lambda_role = IAMRole(session, f'{LAMBDA_NAME_GLUE}-role', 'lambda.amazonaw
 
 glue_lambda_handler = 'lambda_handlers.start_glue_job'
 # depending on delay after creating IAM role, creation of function may fail on the first try
+# try as many times as necessary, using sleep(...) as artificial delay
 max_attempts = 6
 delay = 10
 c = 0
+first_attempt = True
+# while loop until Lambda function is created or maximum number of attempts is exhausted
 while not AWS_architecture.contains_resource(name=LAMBDA_NAME_GLUE):
+    if not first_attempt:
+        print('Trying again...')
     if c >= max_attempts:
         print("Could not create Lambda function!")
         print("Aborting...")
         AWS_architecture.delete_components_with_retry()
         exit()
+    first_attempt = False
     c += 1
-    #print(f"attempt #{c}...")
     sleep(delay)
     # create lambda function that is triggered upon .csv upload to an S3 bucket
+    # specify name of Glue job for Lambda function's variables
+    variables = {
+        'JOB_NAME' : etl_glue_job.name
+    }
     glue_lambda_function = S3LambdaFunction(session, region, account_id, LAMBDA_NAME_GLUE, glue_lambda_handler,
                                             lambda_script_object_key, BUCKET_NAME_SCRIPT, BUCKET_NAME_SOURCE,
-                                            glue_lambda_role, collections=[AWS_architecture])
+                                            glue_lambda_role, variables=variables, collections=[AWS_architecture])
 
 # create security group as component of the VPC
 # rds_security_group = SecurityGroup(session, region, vpc.id, f'{RDS_NAME}_security_group',
@@ -144,19 +171,17 @@ while not AWS_architecture.contains_resource(name=LAMBDA_NAME_GLUE):
 
 # TODO: sort AWS architecture component list to ensure roles are deleted before policies etc.
 
-
-
 print("\nFinished setting up cloud architecture!")
-print("You can now upload new data by typing ...\n") 
+print("You can now upload new data by typing 'upload'.\n") 
 
-POSSIBLE_ANSWERS =  ['delete', 'exit']
+POSSIBLE_ANSWERS_FOR_EXIT =  ['delete', 'exit']
 ans = None
 
 print("When you are ready to delete the architecture, type 'delete'.")
 print("WARNING! This will delete all data that has not been backed up from the cloud!")
-print("If you want to remove the components later manually, type 'exit'.")
+print("If you want to remove the components later manually, type 'exit'.\n")
 
-while ans not in POSSIBLE_ANSWERS:
+while ans not in POSSIBLE_ANSWERS_FOR_EXIT:
     ans = input('> ')
 
     if ans.lower() == 'delete':
@@ -170,4 +195,19 @@ while ans not in POSSIBLE_ANSWERS:
         print("Please remember to delete the following components later:")
         AWS_architecture.list()
         exit()
+
+    # TODO: read CloudWatch logs to check up on status of ETL process
+    elif ans.lower() == 'upload':
+        # download data using Eurostat API
+        downloaded_data = False
+        print("Downloading data on greenhouse emissions...")
+        try:
+            download_emission_data()
+            downloaded_data = True
+        except:
+            print("Failed to download data!")
+        # upload data to cloud infrastructure 
+        if downloaded_data:
+            print("Uploading data to cloud infrastructure...")
+            bucket_source.upload_data('test.csv', DATA_OBJECT_KEY)
     

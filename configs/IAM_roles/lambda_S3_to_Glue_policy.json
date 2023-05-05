@@ -32,6 +32,16 @@
         "arn:aws:s3:::script-bucket-1405480",
         "arn:aws:s3:::script-bucket-1405480/*"
       ]
+    },
+    {
+      "Sid": "AllowCloudWatchLogsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
     }
   ]
 }

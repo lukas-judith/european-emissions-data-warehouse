@@ -1,3 +1,20 @@
+# import sys
+# from awsglue.transforms import *
+# from awsglue.utils import getResolvedOptions
+# from pyspark.context import SparkContext
+# from awsglue.context import GlueContext
+# from awsglue.job import Job
+
+
+# args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+
+# sc = SparkContext()
+# glueContext = GlueContext(sc)
+# spark = glueContext.spark_session
+# job = Job(glueContext)
+# job.init(args['JOB_NAME'], args)
+# job.commit()
+
 import os
 import sys
 from awsglue.utils import getResolvedOptions
@@ -34,7 +51,7 @@ output_path = f"s3a://{sink_bucket}/data_processed"
 # read .csv file from S3 bucket
 data = spark.read \
     .format("csv") \
-    .option("header", "true") \
+    .option("header", "false") \
     .option("inferSchema", "true") \
     .load(input_path)
 

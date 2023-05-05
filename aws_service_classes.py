@@ -268,14 +268,21 @@ class VPC(AWSServiceCollection, AWSService):
 
 class IAMPolicy(AWSService):
     """
-    Role for IAM policy.
+    Role for IAM policy. Can be created from existing policy ARN
+    or from a new JSON permissions file.
     """
-    def __init__(self, session, name, json_file, region=None, account_id=None, collections=None):
+    def __init__(self, session, name, region=None, arn=None, json_file=None,
+                 account_id=None, collections=None):
         super().__init__(session, collections, type='IAM policy')
         self.name = name
         # pass region and account ID if these are contained in the resource name
         # as specified in the policy document (JSON file)
-        self.create(json_file, region, account_id)
+        if not arn and not json_file:
+            raise Exception("Error! Must supply either JSON file or existing policy ARN!")
+        if json_file:
+            self.create(json_file, region, account_id)
+        elif arn:
+            self.id = arn
         
     @handle_exceptions('IAM policy', 'create')
     def create(self, json_file, region, account_id):
@@ -565,38 +572,43 @@ class RDSInstance(AWSService):
 
 class AWSGlueJob(AWSService):
 
-    def __init__(self, session, region, name, role, script_location, collections=None):
+    def __init__(self, session, region, name, role, script_location,
+                 variables=None, collections=None):
         super().__init__(session, collections, type='AWS Glue job')
         self.name = name
         self.role = role
         self.region = region
         # S3 bucket location of the format s3://{bucket-name}/{object-key}
         self.script_location = script_location
-        self.create()
+        self.create(variables)
 
     @handle_exceptions('AWS Glue job', 'create')
-    def create(self):   
+    def create(self, variables):   
         glue_client = self.session.client('glue', region_name=self.region)
+
+        # variables/arguments for the job
+        job_args = {}
+        if variables:
+            for key, value in variables.items():
+                job_args[key] = value
 
         glue_client.create_job(
             Name=self.name,
             Description='ETL process',
-            Role=self.role.id,
+            Role=self.role.name,
             ExecutionProperty={
                 'MaxConcurrentRuns': 2
             },
             Command={
-                'Name': 'etl_process',
-                'ScriptLocation': self.script_location
+                'Name': 'glueetl',
+                'ScriptLocation': self.script_location,
+                'PythonVersion': '3'
             },
-            DefaultArguments={
-                '--job-language': 'python',
-                '--job-bookmark-option': 'job-bookmark-disable'
-            },
-            GlueVersion='2.0',
-            WorkerType='Standard',
+            DefaultArguments=job_args,
+            Timeout=300,
+            GlueVersion='3.0',
             NumberOfWorkers=2,
-            Timeout=300
+            WorkerType='Standard'#|'G.1X'|'G.2X'|'G.025X'
         )
         super().create()
 
@@ -627,9 +639,9 @@ class S3LambdaFunction(AWSService):
         lambda_client = self.session.client('lambda', region_name=self.region)
 
         environment_variables = {}
-        # variable names for the Lambda function, other than session and bucket name 
+        # variable names for the Lambda function to use
         if variables:
-            for key, value in variables:
+            for key, value in variables.items():
                 environment_variables[key] = value
 
         response = lambda_client.create_function(

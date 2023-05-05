@@ -8,4 +8,6 @@ generate_JSONs.py
 .*
 *.ipynb
 test.csv
+old_test.csv
 scripts/lambda_handlers.zip
+
