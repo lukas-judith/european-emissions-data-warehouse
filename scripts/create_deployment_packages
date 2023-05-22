@@ -1,0 +1,54 @@
+#!/bin/bash
+
+echo -e '\nCreating deployment package for Lambda function (S3 to Glue job)'
+
+# easiliy create deployment packages without dependencies
+zip -9 lambda_etl_depl_pkg.zip lambda_handler_etl.py
+
+if [ $? -eq 0 ]; then
+    echo 'Done!'
+else
+    echo 'Failed!'
+fi
+
+echo -e '\nCreating deployment package for Lambda function (S3 to RDS)'
+
+# create deployment packages with dependencies using Docker
+# build Docker image for creating deployment package for AWS Lambda function
+docker build -t lambda_warehouse_image .
+
+if [ $? -eq 0 ]; then
+    echo 'Built docker image for Lambda function!'
+else
+    echo 'Failed to build the docker image for the Lambda function!'
+fi
+
+# zip Lambda handler code and dependencies into a zip file (deployment package)
+#   use -v flag to mount the /var/task dir inside the container to the local working dir
+#   can use -it flag to allocate a pseudo-TTY to start an interactive terminal session and show console printout
+#   use the -c flag to run the command from inside the container
+#   use > /dev/null 2>&1 to direct standard output and standard error to /dev/null
+docker run lambda_warehouse_image /bin/bash -c "cd /var/task && zip -9 -r lambda_warehouse_depl_pkg.zip . > /dev/null 2>&1"
+
+if [ $? -eq 0 ]; then
+    echo 'Created the deployment package!'
+else
+    echo 'Error: Failed to create the deployment package!'
+fi
+
+# obtain ID of the container that was just used
+container_id=$(docker ps -a -q -l)
+
+docker cp $container_id:/var/task/lambda_warehouse_depl_pkg.zip .
+
+if [ $? -eq 0 ]; then
+    echo 'Done!'
+else
+    echo 'Failed!'
+fi
+
+echo -e '\nDeleting Docker container...'
+docker rm $container_id
+
+echo -e '\nDeleting Docker image...'
+docker rmi lambda_warehouse_image

@@ -1,30 +1,12 @@
+import pdb
 import abc
 import json
 import os
-import boto3
-import botocore
-import pdb
-from time import sleep
-
 import numpy as np
+from time import sleep, time
+from sqlalchemy import create_engine, text
 
-from utils import find_optimal_number_of_AZs
-
-
-
-def handle_exceptions(service_type, operation):
-    """
-    Decorator for handling exceptions while performing 
-    different operations on AWS services.
-    """
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            try:
-                func(*args, **kwargs)
-            except Exception as e:
-                print(f"An error occured when trying to {operation} {service_type}:\n{e}")
-        return wrapper
-    return decorator
+from utils import find_optimal_number_of_AZs, handle_exceptions
 
 
 class AWSService(abc.ABC):
@@ -230,6 +212,20 @@ class VPC(AWSServiceCollection, AWSService):
         response = ec2.create_vpc(CidrBlock=cidr_block)
         vpc_id = response['Vpc']['VpcId']
         self.id = vpc_id
+
+        # enable DNS hostname and DNS resolution (otherwise RDS instance cannot be public)
+        ec2.modify_vpc_attribute(
+            EnableDnsHostnames={
+                'Value': True
+            },
+            VpcId=self.id,
+        )
+        ec2.modify_vpc_attribute(
+            EnableDnsSupport={
+                'Value': True
+            },
+            VpcId=self.id,
+        )
         super().create()
 
         # CREATE SUBNETS
@@ -468,6 +464,9 @@ class S3Bucket(AWSService):
 
     @handle_exceptions('S3 bucket', 'delete')
     def delete(self):
+        """
+        Empty and delete S3 bucket.
+        """
         # before deleting the bucket, all of its objects need to be deleted
         self.delete_all_objects()
         s3 = self.session.client('s3', region_name=self.region)
@@ -513,9 +512,14 @@ class RDSInstance(AWSService):
         self.subnets = subnets
         self.instance_class = instance_class
         self.create()
+        # need to explicitly retrieve host name later, after RDS instance has booted up
+        self.hostname = None
 
     @handle_exceptions('RDS instance', 'create')
     def create(self):
+        """
+        Create RDS instance and attach security groups and IAM roles (if specified).
+        """
         rds = self.session.client('rds', region_name=self.region)
         security_group_ids = [sg.id for sg in self.security_groups]
         subnet_ids = [sn.id for sn in self.subnets]
@@ -535,22 +539,88 @@ class RDSInstance(AWSService):
             DBInstanceClass=self.instance_class,
             Engine='postgres',
             MasterUsername=self.username,
-            MasterUserPassword=self.username,
+            MasterUserPassword=self.password,
             VpcSecurityGroupIds=security_group_ids,
             DBSubnetGroupName=db_subnet_group_name,
             # when subnets in different AZs are provided, 
             # create standby replica and provide automatic failover support
             MultiAZ=True, 
             StorageType='gp2', # standard general purpose storage type
-            PubliclyAccessible=False,
+            PubliclyAccessible=True,
         )
         self.id = response['DBInstance']['DBInstanceArn']
         super().create()
 
+    @handle_exceptions('RDS instance', 'retrieve the host name')
+    def retrieve_hostname(self):
+        """
+        Wait for instance to become availble and then retrieve the assigned host name.
+        """
+        rds = self.session.client('rds', region_name=self.region)
+        # Wait until the RDS instance is available
+        print("Waiting until the RDS instance is available (this may take several minutes)...")
+        waiter = rds.get_waiter('db_instance_available')
+        # wait for 30 minutes max.
+        tic = time()
+        waiter.wait(
+            DBInstanceIdentifier=self.name,
+            WaiterConfig={
+                'Delay': 30,
+                'MaxAttempts': 60
+            }
+        )
+        # Once available, retrieve the instance information
+        response = rds.describe_db_instances(DBInstanceIdentifier=self.name)
+        toc = time()
+        diff = toc-tic
+        mins = int(diff // 60)
+        secs = diff % 60
+        print(f"Completed after {mins} minutes and {secs:.2f} seconds")
+        # Store the endpoint (hostname) as an attribute
+        self.hostname = response['DBInstances'][0]['Endpoint']['Address']
+
+    @handle_exceptions('RDS instance', 'create database on')
+    def create_database(self, dbname, port='5432'):
+        """
+        Create new database on RDS instance.
+        """
+        if not self.hostname:
+            raise Exception('Error! No hostname found!')
+        
+        # uri for connecting to default database (postgres) in order to create a new database
+        db_uri = f'postgresql://{self.username}:{self.password}@{self.hostname}:{port}/postgres'
+    
+        # create SQLAlchemy engine and create new database
+        engine = create_engine(db_uri)
+
+        with engine.connect() as connection:
+            connection.execute(text("commit"))
+            connection.execute(text(f"CREATE DATABASE {dbname};"))
+        print(f"Created new database {dbname}")
+        
+    @handle_exceptions('RDS instance', 'install S3 extension for')
+    def install_extension(self, ext_name, dbname, port='5432'):
+        """
+        Install extension for accessing S3 buckets in PostgreSQL.
+        """
+        if not self.hostname:
+            raise Exception('Error! No hostname found!')
+
+        # uri for connecting to specified database in order to create a new database
+        db_uri = f'postgresql://{self.username}:{self.password}@{self.hostname}:{port}/{dbname}'
+    
+        # create SQLAlchemy engine and create new database
+        engine = create_engine(db_uri)
+
+        with engine.connect() as connection:
+            connection.execute(text("commit"))
+            connection.execute(text(f"CREATE EXTENSION IF NOT EXISTS {ext_name} CASCADE;"))
+        print(f'Installed {ext_name} extension for RDS instance with name {self.name}')
+
     @handle_exceptions('RDS instance', 'delete')
     def delete(self):
         """
-        Delete RDS instance and the associated subnet group.
+        Delete RDS instance and the associated subnet group (without backups).
         """
         rds = self.session.client('rds', region_name=self.region)
         # delete RDS instance
@@ -560,13 +630,19 @@ class RDSInstance(AWSService):
         )
         # create Waiter object to make sure RDS instance is deleted
         # before proceeding
-        print("Waiting for deletion of RDS instance...")
+        print("Waiting for deletion of RDS instance (this may take several minutes)...")
         waiter = rds.get_waiter('db_instance_deleted')
+        tic = time()
         waiter.wait(DBInstanceIdentifier=self.name)
         # after RDS instance is deleted, can remove subnet group
         rds.delete_db_subnet_group(
             DBSubnetGroupName=self.db_subnet_group_name,
         )
+        toc = time()
+        diff = toc-tic
+        mins = int(diff // 60)
+        secs = diff % 60
+        print(f"Completed after {mins} minutes and {secs:.2f} seconds")
         super().delete()
         
 
@@ -621,10 +697,11 @@ class AWSGlueJob(AWSService):
 
 class S3LambdaFunction(AWSService):
     """
-    Class of Lambda function triggered by S3 bucket upload of .csv file.
+    Class of Lambda function triggered by S3 bucket upload of a new file.
     """
     def __init__(self, session, region, account_id, name, handler, script_object_key,
-                 bucket_name_script, bucket_name_trigger, role, variables=None, collections=None):
+                 bucket_name_script, bucket_name_trigger, role, variables=None,
+                 collections=None, python_version='python3.8'):
         super().__init__(session, collections, type='Lambda function')
         self.name = name
         self.region = region
@@ -632,10 +709,13 @@ class S3LambdaFunction(AWSService):
         self.role = role
         self.bucket_name_script = bucket_name_script
         self.bucket_name_trigger = bucket_name_trigger
-        self.create(script_object_key, account_id, variables)
+        self.create(script_object_key, account_id, variables, python_version)
 
     @handle_exceptions('Lambda function', 'create')  
-    def create(self, script_object_key, account_id, variables):
+    def create(self, script_object_key, account_id, variables, python_version='python3.8'):
+        """
+        Create AWS Lambda function (x86_64 architecture) with specified deployment package.
+        """
         lambda_client = self.session.client('lambda', region_name=self.region)
 
         environment_variables = {}
@@ -646,7 +726,7 @@ class S3LambdaFunction(AWSService):
 
         response = lambda_client.create_function(
             FunctionName=self.name,
-            Runtime='python3.8',
+            Runtime=python_version,
             Role=self.role.id,
             Handler=self.handler,
             Environment={
@@ -685,16 +765,6 @@ class S3LambdaFunction(AWSService):
                     {
                         'LambdaFunctionArn': self.id,
                         'Events': ['s3:ObjectCreated:*'],
-                        'Filter': {
-                            'Key': {
-                                'FilterRules': [
-                                    {
-                                        'Name': 'suffix',
-                                        'Value': '.csv'  # trigger for files with .csv extension
-                                    }
-                                ]
-                            }
-                        }
                     }
                 ]
             }
@@ -708,3 +778,87 @@ class S3LambdaFunction(AWSService):
         super().delete()
 
 
+class InternetGateway(AWSService):
+    """
+    Class for managing internet gateways in AWS.
+    """
+    def __init__(self, session, region, vpc_id, collections=None):
+        super().__init__(session, collections, type='internet gateway')
+        self.region = region
+        self.vpc_id = vpc_id
+        self.id = None
+        self.create()
+        
+    @handle_exceptions('internet gateway', 'create')
+    def create(self):
+        """
+        Create internet gateway and attach to VPC.
+        """
+        ec2 = self.session.client('ec2', region_name=self.region)
+        response = ec2.create_internet_gateway()
+        self.id = response['InternetGateway']['InternetGatewayId']
+        # atach to VPC
+        ec2.attach_internet_gateway(InternetGatewayId=self.id, VpcId=self.vpc_id)
+        super().create()
+
+    @handle_exceptions('internet gateway', 'delete')
+    def delete(self):
+        """
+        Detach and delete internet gateway.
+        """
+        ec2 = self.session.client('ec2', region_name=self.region)
+        ec2.detach_internet_gateway(InternetGatewayId=self.id, VpcId=self.vpc_id)
+        ec2.delete_internet_gateway(InternetGatewayId=self.id)
+        super().delete()
+        
+
+class RoutingTable(AWSService):
+    """
+    Class for managing routing tables in AWS.
+    """
+    def __init__(self, session, region, vpc_id, subnets=None, collections=None):
+        super().__init__(session, collections, type='routing table')
+        self.region = region
+        self.vpc_id = vpc_id
+        self.id = None
+        self.create(subnets)
+
+    @handle_exceptions('routing table', 'create')
+    def create(self, subnets=None):
+        """
+        Create routing table in VPC and associate it with the specified subnets.
+        """
+        ec2 = self.session.client('ec2', region_name=self.region)
+        response = ec2.create_route_table(VpcId=self.vpc_id)
+        self.id = response['RouteTable']['RouteTableId']
+
+        # associate the subnets with this route table
+        # (otherwise, they will be associated with the main/default route table)
+        if subnets:
+            for subnet in subnets:
+                ec2.associate_route_table(
+                SubnetId=subnet.id, 
+                RouteTableId=self.id
+            )
+        super().create()
+
+    @handle_exceptions('routing table', 'add route to')
+    def add_route(self, gateway_id, destination_cidr):
+        """
+        Add route for internet gateway.
+        """
+        ec2 = self.session.client('ec2', region_name=self.region)
+        ec2.create_route(
+            RouteTableId=self.id,
+            DestinationCidrBlock=destination_cidr,
+            GatewayId=gateway_id
+        )
+
+    @handle_exceptions('routing table', 'delete')
+    def delete(self):
+        """
+        Delete routing table from VPC.
+        """
+        ec2 = self.session.client('ec2', region_name=self.region)
+        ec2.delete_route_table(RouteTableId=self.id)
+        super().delete()
