@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 def transfer_processed_data(event, context):
     """
-    Transfer processed data from S3 bucket to RDS instance.
+    Transfers processed data from S3 bucket to RDS instance.
     """
     # Note: since Apache Spark processes the data in parallel,
     # it may generate multiple parquet files.
@@ -44,33 +44,43 @@ def transfer_processed_data(event, context):
     
     table_name = 'european_ghg_projections'
 
-    # columns and data types
-    column_definitions = [
-        'Country VARCHAR',
-        'Year INTEGER',
-        'Scenario VARCHAR',
-        'Category VARCHAR',
-        'Gas VARCHAR',
-        'ReportedValue FLOAT',
-        'Unit VARCHAR'
-    ]
-    columns = ['Country', 'Year', 'Scenario', 'Category', 'Gas', 'ReportedValue', 'Unit']
-
     try:
         # create SQLAlchemy engine and create new database
         engine = create_engine(db_uri)
 
+        # create table with unique keyword, this allows for update of the reported value
+        # upon conflict (see import_into_real_table_command below)
+        create_table_command = f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            id SERIAL PRIMARY KEY,
+            Country VARCHAR,
+            Year INTEGER,
+            Scenario VARCHAR,
+            Category VARCHAR,
+            Gas VARCHAR,
+            ReportedValue FLOAT,
+            Unit VARCHAR,
+            UNIQUE (Country, Year, Scenario, Category, Gas, Unit)
+        );
+        """
+        # use temporary data to which the data is uploaded from the S3 bucket first
+        # (will be deleted afterwards)
+        create_temporary_table_command = f"""
+        CREATE TEMPORARY TABLE temp_{table_name} AS TABLE {table_name} WITH NO DATA;
+        """
+
         with engine.connect() as connection:
             connection.execute(text("commit"))
-            connection.execute(text(f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(column_definitions)});"))
-        print(f"Created new database table {table_name}")
+            connection.execute(text(create_table_command))
+            connection.execute(text(create_temporary_table_command))
+        print(f"Created new database table (if not existent) {table_name}")
 
         # import each CSV file into database separately
         for file in csv_files:
             s3_import_command = f"""
             SELECT aws_s3.table_import_from_s3 (
-                '{table_name}', 
-                '{', '.join(columns)}',
+                'temp_{table_name}', 
+                'Country, Year, Scenario, Category, Gas, ReportedValue, Unit',
                 'DELIMITER '','' CSV',
                 '{bucket_name}', 
                 '{file}', 
@@ -80,8 +90,19 @@ def transfer_processed_data(event, context):
                 ''
             );
             """
+            # import the data into the actual table, handling conflicts with duplicates
+            # (update upon data entry with new reported value)
+            import_into_real_table_command = f"""
+            INSERT INTO {table_name} (Country, Year, Scenario, Category, Gas, ReportedValue, Unit)
+            SELECT Country, Year, Scenario, Category, Gas, ReportedValue, Unit
+            FROM temp_{table_name} 
+            ON CONFLICT (Country, Year, Scenario, Category, Gas, Unit) DO UPDATE
+            SET ReportedValue = EXCLUDED.ReportedValue;
+            """
+
             with engine.connect() as connection: 
                 connection.execute(text(s3_import_command))
+                connection.execute(text(import_into_real_table_command))  
                 connection.execute(text("commit"))
             print(f"Imported {file} to database {dbname}")
 

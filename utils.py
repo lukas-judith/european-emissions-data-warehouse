@@ -7,7 +7,7 @@ import subprocess
 def find_optimal_number_of_AZs(num_subnets, num_azs):
     """
     Given an even number of subnets to be distributed across multiple AZs,
-    determine the number of AZs to use. Follow this rule:
+    determines the number of AZs to use. Follow this rule:
 
     1. Use as many AZs as possible, while using at least two subnets per AZ.
     2. If creating less than 4 subnets, use 2 AZs.
@@ -19,20 +19,18 @@ def find_optimal_number_of_AZs(num_subnets, num_azs):
 
 def save_object(obj, path):
     """
-    Save any Python object to a local file using pickle.
+    Saves any Python object to a local file using pickle.
     """
     with open(path, 'wb') as file:
         pickle.dump(obj, file)
 
-
 def load_object(path):
     """
-    Load any object that has been saved using pickle.
+    Loads any object that has been saved using pickle.
     """
     with open(path, 'rb') as file:
         obj = pickle.load(file)
     return obj
-
 
 def handle_exceptions(service_type, operation):
     """
@@ -52,7 +50,7 @@ def handle_exceptions(service_type, operation):
 def create_deployment_package(script_path, zip_path, dependencies=None,
                               python_version='python3.8', upgrade_pip=True):
     """
-    Create a deployment package consisting of a Python script and its dependencies.
+    Creates a deployment package consisting of a Python script and its dependencies.
     
     Args:
         script_path (str): The path to the python script with the lambda function handler.
@@ -108,41 +106,3 @@ def create_deployment_package(script_path, zip_path, dependencies=None,
 
     # remove the temporary directory
     shutil.rmtree(temp_dir)
-
-
-
-
-    # temp_dir = 'temp_package_dir'
-    # os.makedirs(temp_dir, exist_ok=True) 
-    
-    # # copy the Python script to the temporary directory
-    # shutil.copy(script_path, temp_dir)
-
-    # # move to the temporary directory
-    # os.chdir(temp_dir)
-
-    # # Create a virtual environment in the temporary directory
-    # subprocess.check_call([python_version, '-m', 'venv', temp_dir])
-
-    # # Activate the virtual environment
-    # activate_script = os.path.join(temp_dir, 'bin', 'activate')
-    # subprocess.check_call(['source', activate_script], shell=True)
-
-    # # Upgrade pip if specified
-    # if upgrade_pip:
-    #     subprocess.check_call([python_version, '-m', 'pip', 'install', '--upgrade', 'pip'])
-
-    # # Install the dependencies in the virtual environment
-    # if dependencies:
-    #     subprocess.check_call([python_version, '-m', 'pip', 'install'] + dependencies)
-
-    # # Deactivate the virtual environment
-    # subprocess.check_call(['deactivate'], shell=True)
-
-    # # move the zip file to the parent directory
-    # if os.path.exists(zip_path):
-    #         os.remove(zip_path)  
-    # shutil.move(f"{temp_dir}/{zip_path}", '.')
-
-    # # remove the temporary directory
-    # shutil.rmtree(temp_dir)

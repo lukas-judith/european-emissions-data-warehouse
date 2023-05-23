@@ -1,4 +1,3 @@
-import os
 import sys
 from itertools import chain
 from awsglue.utils import getResolvedOptions
@@ -84,7 +83,10 @@ try:
         .dropna(subset=['CountryCode', 'Year', 'Scenario', 'Category', 'Gas', 'Reported Value'], how='any') \
         .filter((col('Gas') == 'Total GHG emissions (ktCO2e)') 
                 & col('CountryCode').isin(list(country_code_map.keys()))) \
-        .withColumn('Unit', when((col('Gas') == 'Total GHG emissions (ktCO2e)'), 'kt CO2 equivalent')) \
+        .withColumn('Unit', when((col('Gas') == 'Total GHG emissions (ktCO2e)'), 'kt CO2 equivalent') \
+                    .otherwise(lit(None))) \
+        .withColumn('Gas', when((col('Gas') == 'Total GHG emissions (ktCO2e)'), 'Total GHG emissions') \
+                    .otherwise(col('Gas'))) \
         .withColumnRenamed('Total GHG emissions (ktCO2e)', 'Total GHG emissions') \
         .withColumnRenamed('Reported Value', 'ReportedValue') \
         .withColumn('Country', mapping_expr[col("CountryCode")]) \
