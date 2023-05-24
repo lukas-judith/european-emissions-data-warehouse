@@ -31,7 +31,7 @@ GLUE_JOB_POLICY_PATH = 'configs/IAM_roles/glue_job_policy.json'
 
 def create_lambda_function_with_retry(function_name, creation_params, collection, max_attempts=2, delay=10):
     """
-    Create a lambda function with specified parameters, retrying several times if the first attempt fails.
+    Creates a lambda function with specified parameters, retrying several times if the first attempt fails.
     """
     c = 0
     first_attempt = True
@@ -102,7 +102,16 @@ def build_cloud_infrastructure(credentials_file='aws_details.json'):
 
     # create a collection of AWS services to make it easier to delete all of them later
     AWS_architecture = AWSServiceCollection()
-    print('\nBuilding cloud infrastructure...')
+    
+    print("WARNING: the current version of this account is using services not eligible for the free tier!")
+    print("If you continue, you may be charged by AWS. For more information, see the README.md file.")
+    
+    cont = input("Continue? [yes]/no ")
+    if cont.lower() in ['yes', '']:
+        print('\nBuilding cloud infrastructure...')        
+    else:
+        print('Exiting')
+        exit()
 
     try:
         #############
@@ -332,7 +341,7 @@ def build_cloud_infrastructure(credentials_file='aws_details.json'):
                 print(f"Uploading {filename} to cloud infrastructure...")
                 bucket_source.upload_data(filename, DATA_OBJECT_KEY)
                 print("You can check the ETL job status under 'AWS Glue > ETL jobs' or 'CloudWatch > Logs' in your AWS account.\n")
-                print("After the ETL job has finished, you can access the data in the PostgreSQL database.")
+                print("After the ETL job has finished, you can access the data in the PostgreSQL database.\n")
         else:
             print(f"\nUnknown command {ans}! Try again!\n")
         
