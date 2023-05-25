@@ -8,7 +8,7 @@ The code in *main.py* sets up all components of the warehouse, as illustrated in
 
 Note that AWS services are generally **not free of charge**, so the personal use of this project may lead to charges to your account. For important information regarding **billing, security and Data Specifications**, as well as instructions on how to run the code and for a brief code demonstration, refer to the [table of contents](#Table-of-Contents).
 
-<img src="/Users/lukasjudith/Documents/Projects/Data Science and Data Eng Projects/EU Emissions Data Warehouse/european-emissions-data-warehouse/imgs/eu-ghg-warenouse-diagram.png" alt="eu-ghg-warenouse-diagram" style="zoom:180%;" />
+<img src="imgs/eu-ghg-warenouse-diagram.png" alt="eu-ghg-warenouse-diagram" style="zoom:180%;" />
 
 *Fig. 1: Diagram for the data warehouse architecture in the AWS cloud.*
 
@@ -42,7 +42,7 @@ Note that AWS services are generally **not free of charge**, so the personal use
 
 #### Data Specifications
 
-The dataset used for this project contains projections of the total greenhouse gas emissions as submitted by the individual European countries, gathered by the [European Environment Agency (EEA)](https://www.eea.europa.eu/en). The data was last updated in 2022 (as of May 2023) and can be found [here](https://www.eea.europa.eu/en/datahub/datahubitem-view/4b8d94a4-aed7-4e67-a54c-0623a50f48e8), along with its metadata fact sheet. Estimations were made for different years between 2015 and 2050 for different emission sources and scenarios and are given in kt CO2 equivalent (see below).
+The dataset used for this project contains projections of the total greenhouse gas emissions as submitted by the individual European countries, gathered by the [European Environment Agency (EEA)](https://www.eea.europa.eu/en). The data was last updated in 2022 (as of May 2023) and can be found [here](https://www.eea.europa.eu/en/datahub/datahubitem-view/4b8d94a4-aed7-4e67-a54c-0623a50f48e8), along with its metadata fact sheet. Estimations were made for different years between 2015 and 2050 for different emission sources and scenarios (see below) and are given in kt CO2 equivalent.
 
 The dataset is downloaded as a CSV file with ~30.000 rows and a size of ~7 MB.
 
@@ -130,7 +130,7 @@ You can [set up a billing alarm](https://docs.aws.amazon.com/AmazonCloudWatch/la
 
 After executing the script *main.py*, the user should see the following printout in the command line while the cloud infrastructure is being set up:
 
-<img src="/Users/lukasjudith/Documents/Projects/Data Science and Data Eng Projects/EU Emissions Data Warehouse/european-emissions-data-warehouse/imgs/start_program.png" alt="start_program" style="zoom:200%;" />
+<img src="imgs/start_program.png" alt="start_program" style="zoom:200%;" />
 
 *Fig. 2: Command line with interactive session after creating cloud infrastructure.*
 
@@ -142,13 +142,13 @@ The process may take a few minutes, specifically waiting for the RDS instance to
 
 Once the user has given the *upload* command, the data will be downloaded from the EEA website and uploaded to the cloud warehouse:
 
-<img src="/Users/lukasjudith/Documents/Projects/Data Science and Data Eng Projects/EU Emissions Data Warehouse/european-emissions-data-warehouse/imgs/upload_data.png" alt="upload_data" style="zoom:200%;" />
+<img src="imgs/upload_data.png" alt="upload_data" style="zoom:200%;" />
 
 *Fig. 3: Interactive session after uploading the EEA data to the cloud.*
 
 It may be necessary to wait for a short time (usually about 1-2 minutes) until the lambda functions and ETL job have been executed successfully. Afterwards, the data should be available in the PostgreSQL database. It can then be accessed with various tools, such as [DBeaver](https://dbeaver.io):
 
-<img src="/Users/lukasjudith/Documents/Projects/Data Science and Data Eng Projects/EU Emissions Data Warehouse/european-emissions-data-warehouse/imgs/database_dbeaver.png" alt="database_dbeaver" style="zoom:200%;" />
+<img src="imgs/database_dbeaver.png" alt="database_dbeaver" style="zoom:200%;" />
 
 *Fig. 4: Excerpt of the processed data in PostgreSQL database, accessed using DBeaver.*
 
@@ -162,7 +162,7 @@ Afterwards, the infrastructure can be removed by using the *delete* command. Thi
 
 The user is presented with this final printout:
 
-<img src="/Users/lukasjudith/Documents/Projects/Data Science and Data Eng Projects/EU Emissions Data Warehouse/european-emissions-data-warehouse/imgs/deleting_infrastructure.png" alt="deleting_infrastructure" style="zoom:200%;" />
+<img src="imgs/deleting_infrastructure.png" alt="deleting_infrastructure" style="zoom:200%;" />
 
 *Fig. 5: Command line after successfully deleting the infrastructure.*
 
