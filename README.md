@@ -2,15 +2,15 @@
 
 In this project, the AWS (Amazon Web Services) Python SDK is used to automatically set up a data warehouse in the cloud for cleaning and storing greenhouse gas (GHG) emission data, which is obtained from the website of the [European Environment Agency (EEA)](https://www.eea.europa.eu/en).  
 
-***Disclaimer**: this is an experimental project to improve and showcase my current skills in cloud computing and data engineering and is not in any way meant to resemble a full software solution for applications other than personal use.*
+***Disclaimer**: this is an experimental project to improve and showcase my current skills in cloud computing and data engineering and is not in any way meant to represent a full software solution for applications other than personal use.*
 
-The code in *main.py* sets up all components of the warehouse, as illustrated in the diagram in Fig. 1 below. During an interactive command line session, data can then easily be downloaded from the website of the rom the website of the EEA and uploaded to the cloud infrastructure. This automatically triggers an ETL job that cleans and transforms the data using PySpark, and then uploads it to a PostgreSQL database. For robust and highly available storage of the processed data, the architecture features [multi-AZ deployment](https://aws.amazon.com/rds/features/multi-az/) of the RDS instance.
+The code in `main.py` sets up all components of the warehouse, as illustrated in the diagram in Fig. 1 below. During an interactive command line session, data can then easily be downloaded from the official EEA website and uploaded to the cloud infrastructure. This automatically triggers an ETL job that cleans and transforms the data using PySpark, and then uploads it to a PostgreSQL database. For robust and highly available storage of the processed data, the architecture features [multi-AZ deployment](https://aws.amazon.com/rds/features/multi-az/) of the RDS instance.
 
 Note that AWS services are generally **not free of charge**, so the personal use of this project may lead to charges to your account. For important information regarding **billing, security and Data Specifications**, as well as instructions on how to run the code and for a brief code demonstration, refer to the [table of contents](#Table-of-Contents).
 
-<img src="imgs/eu-ghg-warenouse-diagram.png" alt="eu-ghg-warenouse-diagram" style="zoom:180%;" />
+<img src="imgs/eu-ghg-warehouse-diagram.png" alt="eu-ghg-warenouse-diagram" style="zoom:180%;" />
 
-*Fig. 1: Diagram for the data warehouse architecture in the AWS cloud.*
+*Fig. 1: Diagram for the data warehouse architecture in the AWS cloud. Diagram created using [draw.io](https://www.drawio.com).* 
 
 
 
@@ -26,7 +26,7 @@ Note that AWS services are generally **not free of charge**, so the personal use
    2. [Security](#Security)
    3. [Billing in AWS](#Billing-in-AWS)
 2. [Brief Code Documentation](#Brief-Code-Documentation)
-3. [How to use the Code](#How-to-use-the-Code)
+3. [How to Use the Code](#How-to-Use-the-Code)
 4. [Code Demonstration](#Code-Demonstration)
 5. [Planned Updates](#Planned-Updates)
 6. [Contact and Feedback](#Contact-and-Feedback)
@@ -42,7 +42,7 @@ Note that AWS services are generally **not free of charge**, so the personal use
 
 #### Data Specifications
 
-The dataset used for this project contains projections of the total greenhouse gas emissions as submitted by the individual European countries, gathered by the [European Environment Agency (EEA)](https://www.eea.europa.eu/en). The data was last updated in 2022 (as of May 2023) and can be found [here](https://www.eea.europa.eu/en/datahub/datahubitem-view/4b8d94a4-aed7-4e67-a54c-0623a50f48e8), along with its metadata fact sheet. Estimations were made for different years between 2015 and 2050 for different emission sources and scenarios (see below) and are given in kt CO2 equivalent.
+The dataset used for this project contains projections of the total greenhouse gas emissions as submitted by the individual European countries, gathered by the [European Environment Agency (EEA)](https://www.eea.europa.eu/en). The data was last updated in 2022 (as of May 2023) and can be found [on the EEA website](https://www.eea.europa.eu/en/datahub/datahubitem-view/4b8d94a4-aed7-4e67-a54c-0623a50f48e8), along with its metadata fact sheet. Estimations were made for different years between 2015 and 2050 for different emission sources and scenarios (see below) and are given in kt CO2 equivalent.
 
 The dataset is downloaded as a CSV file with ~30.000 rows and a size of ~7 MB.
 
@@ -62,7 +62,7 @@ The dataset is downloaded as a CSV file with ~30.000 rows and a size of ~7 MB.
 
 #### Security 
 
-In order to work properly, the code requires an **access key **and a **secret key** that can be generated in your AWS account (see [How to use the Code](#How-to-use-the-Code)). These keys are needed to set up infrastructure in your AWS account programmatically. The code in this repository **does not** pass on your credentials to any third party and uses the keys only for the purpose of creating and deleting the data warehouse infrastructure. To avoid any potential security risks, you can **delete the key pair** right after you are done using the code.
+In order to work properly, the code requires an **access key **and a **secret key** that can be generated in your AWS account (see [How to Use the Code](#How-to-use-the-Code)). These keys are needed to set up infrastructure in your AWS account programmatically. The code in this repository **does not** pass on your credentials to any third party and uses the keys only for the purpose of creating and deleting the data warehouse infrastructure. To avoid any potential security risks, you can **delete the key pair** right after you are done using the code.
 
 #### Billing in AWS
 
@@ -80,11 +80,37 @@ You can [set up a billing alarm](https://docs.aws.amazon.com/AmazonCloudWatch/la
 
 *Note that this section does not serve as a full documentation of the code and is (in its current state) only meant to give a brief overview of the different components of this project.*
 
-... (planned for next commit)
+#### aws_details_template.json
+
+Config file into which you have to enter your AWS access key and secret key (see [How to Use the Code](#How-to-use-the-Code)) and a database master username and password of your choice. **Has to be renamed to *aws_details.json***.
+
+#### main.py
+
+The main script that builds the data warehouse in your AWS account, using the Python wrapper classes from the [aws_service_classes module](#aws_service_classes.py). Starts an interactive terminal section that allows the user to interact with the cloud infrastructure. Provides error handling for the case that the execution of the code is interrupted and for any error that cannot be intercepted by the error handling provided by the wrapper classes.
+
+#### aws_service_classes.py
+
+Contains Python wrapper classes (built on top of the boto3 SDK for AWS) for easily creating, deleting and interacting with the different AWS services used for this data warehouse. Features error handling for each class that informs the user when something goes wrong when creating the infrastructure, without interrupting the program.
+
+#### data_downloader.py
+
+Short script that uses the requests library to download the CSV dataset from the EEA website. See [Data Specifications](#Data-Specifications). 
+
+#### utils.py
+
+Collection of some general useful functions used in the other scripts.
+
+#### scripts (folder)
+
+Contains the PySpark script for the ETL Glue job and the deployment packages for the Lambda functions. The deployment packages (.zip files) are created using the *create_deployment_packages* bash script and a Dockerfile based on the public Docker image for the public AWS Lambda python:3.8-x86_64 Docker image (this ensures that the dependencies are installed for the correct Python version and architecture). It should not be neccessary for you to run this script yourself, as the deployment packages are included already. 
+
+#### configs (folder)
+
+Contains JSON files specifiying the configurations of IAM policies and security groups used in this project.
 
 
 
-### How to use the Code
+### How to Use the Code
 
 **<u>NOTE: before using the code, see [Security](#Security) and [Billing in AWS](#Billing-in-AWS)!</u>**
 
@@ -92,9 +118,9 @@ You can [set up a billing alarm](https://docs.aws.amazon.com/AmazonCloudWatch/la
 
 2. Make sure to first set up an [IAM user with admin credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/getting-set-up.html#create-an-admin). It is not recommended to use the root user.
 
-3. Log into your AWS account and generate an access key and secret access key pair:
+3. Log into your AWS account (as the IAM admin user) and generate an access key and secret access key pair:
 
-   --> navigate to Identity and Access Management (IAM) (e.g. enter IAM into the search bar) 
+   --> navigate to Identity and Access Management (IAM) (enter IAM into the search bar) 
 
    --> Users --> *choose your IAM user* --> Create access key
 
@@ -128,7 +154,7 @@ You can [set up a billing alarm](https://docs.aws.amazon.com/AmazonCloudWatch/la
 
 ### Code Demonstration
 
-After executing the script *main.py*, the user should see the following printout in the command line while the cloud infrastructure is being set up:
+After executing the script `main.py`, the user should see the following printout in the command line while the cloud infrastructure is being set up:
 
 <img src="imgs/start_program.png" alt="start_program" style="zoom:200%;" />
 
@@ -136,11 +162,11 @@ After executing the script *main.py*, the user should see the following printout
 
 The process may take a few minutes, specifically waiting for the RDS instance to become available usually takes several minutes. Subsequently, an interactive session will be started in the command line in which the user has the choice of uploading data by typing *upload*, deleting the infrastructure via *delete*, or simply exiting the program using *exit*.
 
-**WARNING**: when exiting without the *delete* command, you will have to delete all created AWS services manually!
+**WARNING**: when exiting without the *delete* command, you will have to delete all created AWS services manually! Without deleting the infrastructure (either by using *delete*, or manually), the warehouse will cause **ongoing incurring cost to your AWS account**!
 
 *In case of any errors while setting up the cloud infrastructure, e.g. if your credential are invalid or if your internet connection is unstable, the program will provide error messages to assist you in fixing the problem.*
 
-Once the user has given the *upload* command, the data will be downloaded from the EEA website and uploaded to the cloud warehouse:
+Once the user has given the *upload* command, the data will be downloaded from the EEA website and uploaded to an S3 bucket (raw data bucket) in the cloud warehouse:
 
 <img src="imgs/upload_data.png" alt="upload_data" style="zoom:200%;" />
 
@@ -156,7 +182,7 @@ At this stage, the processed data can be extracted from the database using SQL q
 
 Afterwards, the infrastructure can be removed by using the *delete* command. This first shuts down and deletes the RDS instance (in the current version, no backups or snapshots are saved, so the processed data ist lost), and then the rest of the AWS services making up the data warehouse. 
 
-**IMPORTANT NOTE**: without deleting the infrastructure (either by using *delete*, or manually), the warehouse will cause **ongoing incurring cost to your AWS account**!
+**WARNING**: when exiting without the *delete* command, you will have to delete all created AWS services manually! Without deleting the infrastructure (either by using *delete*, or manually), the warehouse will cause **ongoing incurring cost to your AWS account**!
 
 *If any deletion fails (e.g. when trying to delete components in the wrong order), the program will continue to delete the other services/instances and then try again.*
 
@@ -175,7 +201,6 @@ The user is presented with this final printout:
 - Combine several Data Sources, e.g.:
   - Create new table with general information about each country
   - Add similar emission projections for the United Kingdom
-  - ...
 - Replace infrastructure to enable a completely free use of this code
   - Disable RDS multi-AZ deployment by choice
   - Replace AWS Glue by choice (e.g. with Lambda function using pandas for small amounts of data)
@@ -185,9 +210,9 @@ The user is presented with this final printout:
 
 ### Contact and Feedback
 
-... (planned in future commit)
+I appreciate any feedback or other types of input/comments on this project!
 
-
+Feel free to reach out to me at lukasjudith12@gmail.com, connect on LinkedIn at https://www.linkedin.com/in/lukas-judith/, and check out my personal website at https://lukas-judith.github.io!
 
 
 
