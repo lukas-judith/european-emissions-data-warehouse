@@ -7,6 +7,5 @@ __pycache__
 generate_JSONs.py
 .*
 *.ipynb
-*.zip
 *.csv
 create_database.py
