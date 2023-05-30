@@ -4,6 +4,7 @@ global_carbon_budget.xlsx
 aws_details.json
 aws_utils.py
 __pycache__
+*/__pycache__
 generate_JSONs.py
 .*
 *.ipynb
