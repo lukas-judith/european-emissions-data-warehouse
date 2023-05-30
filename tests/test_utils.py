@@ -1,3 +1,9 @@
+import os
+import pdb
+
+# for importing the self-written Python modules, change working dir
+if os.path.basename(os.getcwd()) == 'tests':
+    os.chdir('..')
 from utils import find_optimal_number_of_AZs, handle_exceptions
 
 

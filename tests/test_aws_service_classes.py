@@ -6,9 +6,12 @@ import botocore
 import moto
 import pytest
 import pandas as pd
-import pdb
 
+# for importing the self-written Python modules, change working dir
+if os.path.basename(os.getcwd()) == 'tests':
+    os.chdir('..')
 from aws_service_classes import *
+
 
 REGION = 'ap-southeast-2'
 MOCK_NAME = 'test-warehouse-service'

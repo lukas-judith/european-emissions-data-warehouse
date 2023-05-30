@@ -1,4 +1,9 @@
+import os
 import requests
+
+# for importing the self-written Python modules, change working dir
+if os.path.basename(os.getcwd()) == 'tests':
+    os.chdir('..')
 from data_downloader import DataDownloader
 
 
