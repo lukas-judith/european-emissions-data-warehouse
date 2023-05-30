@@ -6,7 +6,6 @@ aws_utils.py
 __pycache__
 */__pycache__
 generate_JSONs.py
-.*
 *.ipynb
 *.csv
 create_database.py
