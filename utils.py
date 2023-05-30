@@ -14,6 +14,8 @@ def find_optimal_number_of_AZs(num_subnets, num_azs):
     """
     if num_subnets >= 4:
         return min(num_azs, num_subnets // 2)
+    elif num_subnets == 1:
+        return 1
     else:
         return 2
 
@@ -45,7 +47,6 @@ def handle_exceptions(service_type, operation):
                 print(f"An error occured when trying to {operation} {service_type}:\n{e}")
         return wrapper
     return decorator
-
 
 def create_deployment_package(script_path, zip_path, dependencies=None,
                               python_version='python3.8', upgrade_pip=True):

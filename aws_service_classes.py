@@ -11,7 +11,7 @@ from utils import find_optimal_number_of_AZs, handle_exceptions
 
 class AWSService(abc.ABC):
     """
-    Abstract class for AWS services.
+    Abstract wrapper class for AWS services.
     """
     @abc.abstractmethod
     def __init__(self, session, collections=None, type=None):
@@ -52,7 +52,7 @@ class AWSService(abc.ABC):
         print(string)
         # remove this object from its collections
         for collection in self.collections:
-            if collection and self in collection.components:
+            if collection and (self in collection.components):
                 collection.components.remove(self)
         # flag for successful deletion
         return 1
@@ -60,15 +60,25 @@ class AWSService(abc.ABC):
 
 class AWSServiceCollection():
     """
-    Class that can contain and delete several AWS services as components.
+    Class that can contain and simultaneously delete several AWS services as components.
     """
     def __init__(self):
         self.components = []
 
     def add_component(self, component : AWSService):
-        self.components.append(component)
+        """
+        Adds new component (AWSService instance) to the collection and this collection
+        to the list of collections of the respective component (if not already the case).
+        """
+        if not component in self.components:
+            self.components.append(component)
+        if not self in component.collections:
+            component.collections.append(self)
  
     def add_components(self, components):
+        """
+        Adds several components to the collection.
+        """
         for component in components:
             self.add_component(component)
 
@@ -96,8 +106,8 @@ class AWSServiceCollection():
     
     def delete_components_with_retry(self, max_attempts=3):
         """
-        Delete all AWS components in the AWS service collection.
-        If deletion fails upon first attempt, try again.
+        Deletes all AWS components in the AWS service collection.
+        If deletion fails upon first attempt, tries again.
         """
         c = 0
         first_deletion_attempt = True
@@ -117,7 +127,7 @@ class AWSServiceCollection():
     
     def contains_resource(self, name=None, id=None):
         """
-        Check if the collection includes a resource with given name or ID.
+        Checks if the collection includes a resource with given name or ID.
         """
         if not name and not id:
             raise Exception("You must specify either ID or name of the resource!")
@@ -130,7 +140,7 @@ class AWSServiceCollection():
 
     def list(self):
         """
-        List all components.
+        Lists all components.
         """
         for comp in self.components:
             string = f"{comp.type} with name {comp.name} and ID {comp.id}"
@@ -145,7 +155,7 @@ class AWSServiceCollection():
 
 class Subnet(AWSServiceCollection, AWSService):
     """
-    Class for subnet of a VPC. Can contain other AWS services/instance
+    Wrapper class for subnet of a VPC. Can contain other AWS services/instance
     and is an AWS service itself.
     """
     def __init__(self, session, region, vpc_id, subnet_cidr, az, subnet_name=None,
@@ -186,7 +196,7 @@ class Subnet(AWSServiceCollection, AWSService):
 
 class VPC(AWSServiceCollection, AWSService):
     """
-    Class for a VPC. Can contain other AWS services/instance
+    Wrapper class for a VPC. Can contain other AWS services/instance
     and is an AWS service itself.
     """
     def __init__(self, session, region, num_subnets, vpc_name=None, 
@@ -202,7 +212,7 @@ class VPC(AWSServiceCollection, AWSService):
     @handle_exceptions('vpc', 'create')
     def create(self):
         """
-        Create a virtual private cloud (VPC) with an even specified number of subnets.
+        Creates a virtual private cloud (VPC) with an even specified number of subnets.
         """
         assert self.num_subnets <= 256 # chosen CIDR notation allows for 256 subnets
 
@@ -264,7 +274,7 @@ class VPC(AWSServiceCollection, AWSService):
 
 class IAMPolicy(AWSService):
     """
-    Role for IAM policy. Can be created from existing policy ARN
+    Wrapper class for IAM policy. Can be created from existing policy ARN
     or from a new JSON permissions file.
     """
     def __init__(self, session, name, region=None, arn=None, json_file=None,
@@ -312,7 +322,7 @@ class IAMPolicy(AWSService):
 
 class IAMRole(AWSService):
     """
-    Role for IAM role.
+    Wrapper class for IAM role.
     """
     def __init__(self, session, name, aws_service, policies, collections=None):
         super().__init__(session, collections, type='IAM role')
@@ -325,7 +335,7 @@ class IAMRole(AWSService):
     @handle_exceptions('IAM role', 'create')
     def create(self):
         """
-        Create an IAM role for a specified service that allows specified actions.
+        Creates an IAM role for a specified service that allows specified actions.
         """
         iam = self.session.client('iam')
 
@@ -384,7 +394,7 @@ class SecurityGroup(AWSService):
     @handle_exceptions('security group', 'create')
     def create(self, json_file=None):
         """
-        Create security group within specified VPC and with specified rules.
+        Creates security group within specified VPC and with specified rules.
         """
         ec2 = self.session.client('ec2', region_name=self.region)
         
@@ -430,6 +440,9 @@ class SecurityGroup(AWSService):
 
 
 class S3Bucket(AWSService):
+    """
+    Wrapper class for AWS simple storage service (S3 Bucket).
+    """
 
     def __init__(self, session, region, name, collections=None):
         super().__init__(session, collections, type='S3 bucket')
@@ -441,7 +454,7 @@ class S3Bucket(AWSService):
     @handle_exceptions('S3 bucket', 'create')
     def create(self):
         """
-        Create S3 bucket in specified region.
+        Creates S3 bucket in specified region.
         """
         s3 = self.session.client('s3', region_name=self.region)
         response = s3.create_bucket(
@@ -455,7 +468,7 @@ class S3Bucket(AWSService):
     @handle_exceptions('S3 bucket', 'delete data from')
     def delete_all_objects(self):
         """
-        Delete all objects stored in the bucket.
+        Deletes all objects stored in the bucket.
         """
         s3 = self.session.resource('s3')
         bucket = s3.Bucket(self.name)
@@ -465,7 +478,7 @@ class S3Bucket(AWSService):
     @handle_exceptions('S3 bucket', 'delete')
     def delete(self):
         """
-        Empty and delete S3 bucket.
+        Empties and deletes S3 bucket.
         """
         # before deleting the bucket, all of its objects need to be deleted
         self.delete_all_objects()
@@ -476,7 +489,7 @@ class S3Bucket(AWSService):
     @handle_exceptions('S3 bucket', 'upload data to')
     def upload_data(self, file_path, object_key):
         """
-        Upload a local file to the bucket.
+        Uploads a local file to the bucket.
         """
         if not os.path.exists(file_path):
             raise ValueError(f"File {file_path} does not exist.")
@@ -488,7 +501,7 @@ class S3Bucket(AWSService):
     @handle_exceptions('S3 bucket', 'load data from')
     def get_data(self, object_key, destination_path):
         """
-        Retrieve data from the bucket and save it to a local file.
+        Retrieves data from the bucket and save it to a local file.
         """
         s3 = self.session.client('s3', region_name=self.region)
         with open(destination_path, 'wb') as file:
@@ -518,7 +531,7 @@ class RDSInstance(AWSService):
     @handle_exceptions('RDS instance', 'create')
     def create(self):
         """
-        Create RDS instance and attach security groups and IAM roles (if specified).
+        Creates RDS instance and attach security groups and IAM roles (if specified).
         """
         rds = self.session.client('rds', region_name=self.region)
         security_group_ids = [sg.id for sg in self.security_groups]
@@ -554,7 +567,7 @@ class RDSInstance(AWSService):
     @handle_exceptions('RDS instance', 'retrieve the host name')
     def retrieve_hostname(self):
         """
-        Wait for instance to become availble and then retrieve the assigned host name.
+        Waits for instance to become availble and then retrieve the assigned host name.
         """
         rds = self.session.client('rds', region_name=self.region)
         # Wait until the RDS instance is available
@@ -579,10 +592,10 @@ class RDSInstance(AWSService):
         # Store the endpoint (hostname) as an attribute
         self.hostname = response['DBInstances'][0]['Endpoint']['Address']
 
-    @handle_exceptions('RDS instance', 'create database on')
+    #@handle_exceptions('RDS instance', 'create database on')
     def create_database(self, dbname, port='5432'):
         """
-        Create new database on RDS instance.
+        Creates new database on RDS instance.
         """
         if not self.hostname:
             raise Exception('Error! No hostname found!')
@@ -601,7 +614,7 @@ class RDSInstance(AWSService):
     @handle_exceptions('RDS instance', 'install S3 extension for')
     def install_extension(self, ext_name, dbname, port='5432'):
         """
-        Install extension for accessing S3 buckets in PostgreSQL.
+        Installs extension for accessing S3 buckets in PostgreSQL.
         """
         if not self.hostname:
             raise Exception('Error! No hostname found!')
@@ -620,7 +633,7 @@ class RDSInstance(AWSService):
     @handle_exceptions('RDS instance', 'delete')
     def delete(self):
         """
-        Delete RDS instance and the associated subnet group (without backups).
+        Deletes RDS instance and the associated subnet group (without backups).
         """
         rds = self.session.client('rds', region_name=self.region)
         # delete RDS instance
@@ -647,6 +660,9 @@ class RDSInstance(AWSService):
         
 
 class AWSGlueJob(AWSService):
+    """
+    Wrapper class for AWS Glue jobs.
+    """
 
     def __init__(self, session, region, name, role, script_location,
                  variables=None, collections=None):
@@ -697,7 +713,7 @@ class AWSGlueJob(AWSService):
 
 class S3LambdaFunction(AWSService):
     """
-    Class of Lambda function triggered by S3 bucket upload of a new file.
+    Wrapper class for AWS Lambda functions triggered by S3 bucket upload of a new file.
     """
     def __init__(self, session, region, account_id, name, handler, script_object_key,
                  bucket_name_script, bucket_name_trigger, role, variables=None,
@@ -714,7 +730,7 @@ class S3LambdaFunction(AWSService):
     @handle_exceptions('Lambda function', 'create')  
     def create(self, script_object_key, account_id, variables, python_version='python3.8'):
         """
-        Create AWS Lambda function (x86_64 architecture) with specified deployment package.
+        Creates AWS Lambda function (x86_64 architecture) with specified deployment package.
         """
         lambda_client = self.session.client('lambda', region_name=self.region)
 
@@ -780,7 +796,7 @@ class S3LambdaFunction(AWSService):
 
 class InternetGateway(AWSService):
     """
-    Class for managing internet gateways in AWS.
+    Wrapper class for managing internet gateways in AWS.
     """
     def __init__(self, session, region, vpc_id, collections=None):
         super().__init__(session, collections, type='internet gateway')
@@ -792,7 +808,7 @@ class InternetGateway(AWSService):
     @handle_exceptions('internet gateway', 'create')
     def create(self):
         """
-        Create internet gateway and attach to VPC.
+        Creates internet gateway and attach to VPC.
         """
         ec2 = self.session.client('ec2', region_name=self.region)
         response = ec2.create_internet_gateway()
@@ -804,7 +820,7 @@ class InternetGateway(AWSService):
     @handle_exceptions('internet gateway', 'delete')
     def delete(self):
         """
-        Detach and delete internet gateway.
+        Detaches and delete internet gateway.
         """
         ec2 = self.session.client('ec2', region_name=self.region)
         ec2.detach_internet_gateway(InternetGatewayId=self.id, VpcId=self.vpc_id)
@@ -814,7 +830,7 @@ class InternetGateway(AWSService):
 
 class RoutingTable(AWSService):
     """
-    Class for managing routing tables in AWS.
+    Wrapper class for managing routing tables in AWS.
     """
     def __init__(self, session, region, vpc_id, subnets=None, collections=None):
         super().__init__(session, collections, type='routing table')
@@ -826,7 +842,7 @@ class RoutingTable(AWSService):
     @handle_exceptions('routing table', 'create')
     def create(self, subnets=None):
         """
-        Create routing table in VPC and associate it with the specified subnets.
+        Creates routing table in VPC and associate it with the specified subnets.
         """
         ec2 = self.session.client('ec2', region_name=self.region)
         response = ec2.create_route_table(VpcId=self.vpc_id)
@@ -845,7 +861,7 @@ class RoutingTable(AWSService):
     @handle_exceptions('routing table', 'add route to')
     def add_route(self, gateway_id, destination_cidr):
         """
-        Add route for internet gateway.
+        Adds route for internet gateway.
         """
         ec2 = self.session.client('ec2', region_name=self.region)
         ec2.create_route(
@@ -857,8 +873,21 @@ class RoutingTable(AWSService):
     @handle_exceptions('routing table', 'delete')
     def delete(self):
         """
-        Delete routing table from VPC.
+        Removes all routes and associations and deletes routing table from VPC.
         """
         ec2 = self.session.client('ec2', region_name=self.region)
+        response = ec2.describe_route_tables(RouteTableIds=[self.id])
+        route_table = response['RouteTables'][0]
+
+        # remove associations
+        for assoc in route_table['Associations']:
+            if not assoc['Main']:
+                ec2.disassociate_route_table(AssociationId=assoc['RouteTableAssociationId'])
+
+        # remove non-default routes
+        for route in route_table['Routes']:
+            if not route['DestinationCidrBlock'] == '0.0.0.0/0':
+                ec2.delete_route(RouteTableId=self.id, DestinationCidrBlock=route['DestinationCidrBlock'])
+
         ec2.delete_route_table(RouteTableId=self.id)
         super().delete()
