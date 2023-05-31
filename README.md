@@ -62,7 +62,7 @@ The dataset is downloaded as a CSV file with ~30.000 rows and a size of ~7 MB.
 
 #### Security 
 
-In order to work properly, the code requires an **access key ** and a **secret key** that can be generated in your AWS account (see [How to Use the Code](#How-to-use-the-Code)). These keys are needed to set up infrastructure in your AWS account programmatically. The code in this repository **does not** pass on your credentials to any third party and uses the keys only for the purpose of creating and deleting the data warehouse infrastructure. To avoid any potential security risks, you can **delete the key pair** right after you are done using the code.
+In order to work properly, the code requires an **access key** and a **secret key** that can be generated in your AWS account (see [How to Use the Code](#How-to-use-the-Code)). These keys are needed to set up infrastructure in your AWS account programmatically. The code in this repository **does not** pass on your credentials to any third party and uses the keys only for the purpose of creating and deleting the data warehouse infrastructure. To avoid any potential security risks, you can **delete the key pair** right after you are done using the code.
 
 #### Billing in AWS
 

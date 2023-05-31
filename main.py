@@ -130,7 +130,6 @@ def build_cloud_infrastructure(credentials_file='aws_details.json'):
         # allow all internet traffic into public subnets
         routing_table.add_route(internet_gateway.id, '0.0.0.0/0')
 
-
         #######################################
         # CREATE DATA WAREHOUSE (RDS INSTANCE)
         #######################################

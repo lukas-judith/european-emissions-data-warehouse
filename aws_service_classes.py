@@ -917,7 +917,7 @@ class RoutingTable(AWSService):
 
         # remove non-default routes
         for route in route_table['Routes']:
-            if not route['DestinationCidrBlock'] == '0.0.0.0/0':
+            if not route['Origin'] == 'CreateRouteTable':
                 ec2.delete_route(RouteTableId=self.id, DestinationCidrBlock=route['DestinationCidrBlock'])
 
         ec2.delete_route_table(RouteTableId=self.id)
