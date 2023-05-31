@@ -9,3 +9,4 @@ generate_JSONs.py
 *.ipynb
 *.csv
 create_database.py
+notebooks
