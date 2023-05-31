@@ -4,7 +4,7 @@ from time import sleep
 
 # wrapper classes to facilitate use of the AWS SDK
 from aws_service_classes import *
-from data_downloader import download_emission_data
+from data_downloader import DataDownloader
 
 
 # names of the AWS resources
@@ -331,7 +331,8 @@ def build_cloud_infrastructure(credentials_file='aws_details.json'):
             downloaded_data = False
             print("\nDownloading data on greenhouse gas emissions...")
             try:
-                filename = download_emission_data()
+                downloader = DataDownloader()
+                filename = downloader.download_emission_data()
                 downloaded_data = True
             except:
                 filename = None
